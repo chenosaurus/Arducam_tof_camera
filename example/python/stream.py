@@ -140,7 +140,14 @@ class DepthCameraStreamer:
                         
                         # Create video frame and push to source
                         if self.video_source:
-                            video_frame = rtc.VideoFrame.create(rgb_image)
+                            # Get the height and width from the image
+                            height, width = rgb_image.shape[:2]
+                            
+                            # Convert to RGBA format for VideoFrame
+                            rgba_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2RGBA)
+                            
+                            # Create video frame using the correct constructor
+                            video_frame = rtc.VideoFrame(width, height, rtc.VideoBufferType.RGBA, rgba_image.tobytes())
                             self.video_source.capture_frame(video_frame)
                             
                     except Exception as e:
