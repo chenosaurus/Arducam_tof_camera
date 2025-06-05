@@ -146,8 +146,7 @@ class DepthCameraDataStreamer:
                             # Publish data to room
                             await self.room.local_participant.publish_data(
                                 serialized_data,
-                                kind=rtc.DataPacketKind.RELIABLE,
-                                destination_sids=None  # Send to all participants
+                                reliable=True,
                             )
                             
                             self.logger.debug(f"Published frame data: {len(serialized_data)} bytes")
