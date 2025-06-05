@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # dependencies = [
-#   "cv2",
+#   "opencv-python",
 #   "numpy",
 #   "ArducamDepthCamera",
 # ]
