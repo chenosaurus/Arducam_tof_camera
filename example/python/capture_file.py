@@ -43,9 +43,11 @@ def main():
     while frame_count < max_frames:
         frame = cam.requestFrame(2000)
         if frame is not None and isinstance(frame, ac.RawData):
-            buf = frame.raw_data
+            # Make a copy of the raw data before releasing the frame to avoid use-after-free
+            buf = np.copy(frame.raw_data)
             cam.releaseFrame(frame)
 
+            # Process the copied buffer
             buf = (buf / (1 << 4)).astype(np.uint8)
 
             # Generate filename with timestamp and frame number
@@ -61,7 +63,10 @@ def main():
             
             frame_count += 1
             
-            # Small delay between captures
+            # Increase delay to prevent potential race conditions
+            time.sleep(0.5)
+        else:
+            print(f"Failed to capture frame {frame_count + 1}")
             time.sleep(0.1)
 
     print("Capture complete!")
