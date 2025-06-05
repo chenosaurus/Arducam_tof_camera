@@ -143,6 +143,9 @@ class DepthCameraDataStreamer:
                         serialized_data = self.serialize_frame_data(depth_buf, confidence_buf, camera_info)
                         
                         if serialized_data:
+                            # log data size in bytes
+                            self.logger.info(f"Data size: {len(serialized_data)} bytes")
+                            
                             # Publish data to room
                             await self.room.local_participant.publish_data(
                                 serialized_data,
