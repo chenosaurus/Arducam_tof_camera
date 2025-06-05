@@ -14,3 +14,5 @@ build/
 *.patch
 /*.json
 /cali.bin
+
+.env
