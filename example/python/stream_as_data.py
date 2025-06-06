@@ -81,13 +81,13 @@ class DepthCameraDataStreamer:
     def serialize_frame_data(self, depth_data: np.ndarray, confidence_data: np.ndarray, camera_info: dict) -> bytes:
         """Serialize depth frame data as PNG bytes for transmission"""
         try:
-            # Encode depth data as 16-bit single-channel PNG
-            # Normalize depth data to use full 16-bit range for better compression
+            # Encode depth data as 8-bit single-channel PNG for smaller size
+            # Normalize depth data to 8-bit range (0-255)
             depth_normalized = np.clip(depth_data, 0, camera_info["max_distance"])
-            depth_16bit = (depth_normalized * 65535 / camera_info["max_distance"]).astype(np.uint16)
+            depth_8bit = (depth_normalized * 255 / camera_info["max_distance"]).astype(np.uint8)
             
-            # Encode as single-channel PNG (grayscale)
-            success, depth_png = cv2.imencode('.png', depth_16bit, [cv2.IMWRITE_PNG_COMPRESSION, 9])
+            # Encode as single-channel PNG with moderate compression for speed
+            success, depth_png = cv2.imencode('.png', depth_8bit, [cv2.IMWRITE_PNG_COMPRESSION, 6])
             if not success:
                 self.logger.error("Failed to encode depth data as PNG")
                 return b''
@@ -115,8 +115,16 @@ class DepthCameraDataStreamer:
             self.logger.info(f"Camera info: {camera_info}")
             
             frame_count = 0
+            failed_publishes = 0
+            max_consecutive_failures = 5
+            
             while self.is_streaming and self.room.connection_state == rtc.ConnectionState.CONN_CONNECTED:
                 start_time = asyncio.get_event_loop().time()
+                
+                # Check connection health
+                if failed_publishes >= max_consecutive_failures:
+                    self.logger.error(f"Too many consecutive publish failures ({failed_publishes}), stopping stream")
+                    break
                 
                 try:
                     # Capture frame from camera
@@ -140,21 +148,24 @@ class DepthCameraDataStreamer:
                                 # log data size in bytes
                                 self.logger.info(f"Data size: {len(serialized_data)} bytes")
                                 
-                                # Publish data to room with timeout
+                                # Publish data to room with timeout - using unreliable for better performance
                                 self.logger.debug(f"Publishing frame {frame_count}")
                                 try:
                                     await asyncio.wait_for(
                                         self.room.local_participant.publish_data(
                                             serialized_data,
-                                            reliable=True,
+                                            reliable=False,  # Use unreliable for better performance with large data
                                         ),
-                                        timeout=5.0  # 5 second timeout
+                                        timeout=2.0  # Reduced timeout to 2 seconds
                                     )
                                     self.logger.debug(f"Successfully published frame {frame_count}")
+                                    failed_publishes = 0  # Reset failure counter on success
                                 except asyncio.TimeoutError:
-                                    self.logger.error(f"Timeout publishing frame {frame_count}")
+                                    failed_publishes += 1
+                                    self.logger.warning(f"Timeout publishing frame {frame_count} (failures: {failed_publishes})")
                                 except Exception as e:
-                                    self.logger.error(f"Error publishing frame {frame_count}: {e}")
+                                    failed_publishes += 1
+                                    self.logger.warning(f"Error publishing frame {frame_count}: {e} (failures: {failed_publishes})")
                                 
                         except Exception as e:
                             self.logger.error(f"Error processing frame {frame_count}: {e}")
