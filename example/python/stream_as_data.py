@@ -17,6 +17,7 @@ import asyncio
 import json
 import struct
 import numpy as np
+import cv2
 import ArducamDepthCamera as ac
 from dotenv import load_dotenv
 from signal import SIGINT, SIGTERM
@@ -78,7 +79,7 @@ class DepthCameraDataStreamer:
             return False
     
     def serialize_frame_data(self, depth_data: np.ndarray, confidence_data: np.ndarray, camera_info: dict) -> bytes:
-        """Serialize depth frame data to bytes for transmission"""
+        """Serialize depth frame data to bytes for transmission with PNG compression"""
         try:
             # Create metadata
             metadata = {
@@ -86,20 +87,40 @@ class DepthCameraDataStreamer:
                 "height": camera_info["height"],
                 "max_distance": camera_info["max_distance"],
                 "confidence_threshold": confidence_threshold,
-                "timestamp": asyncio.get_event_loop().time()
+                "timestamp": asyncio.get_event_loop().time(),
+                "encoding": "png"  # Indicate PNG encoding
             }
             
             # Convert metadata to JSON bytes
             metadata_json = json.dumps(metadata).encode('utf-8')
             metadata_length = len(metadata_json)
             
-            # Convert numpy arrays to bytes
-            depth_bytes = depth_data.tobytes()
-            confidence_bytes = confidence_data.tobytes() if confidence_data is not None else b''
+            # Encode depth data as 16-bit PNG to preserve depth precision
+            # Normalize depth data to use full 16-bit range for better compression
+            depth_normalized = np.clip(depth_data, 0, camera_info["max_distance"])
+            depth_16bit = (depth_normalized * 65535 / camera_info["max_distance"]).astype(np.uint16)
             
-            # Pack everything: metadata_length (4 bytes) + metadata + depth_data + confidence_data
+            # Encode as PNG
+            success, depth_png = cv2.imencode('.png', depth_16bit)
+            if not success:
+                self.logger.error("Failed to encode depth data as PNG")
+                return b''
+            depth_bytes = depth_png.tobytes()
+            
+            # Encode confidence data as 8-bit PNG if available
+            confidence_bytes = b''
+            if confidence_data is not None:
+                confidence_8bit = confidence_data.astype(np.uint8)
+                success, confidence_png = cv2.imencode('.png', confidence_8bit)
+                if success:
+                    confidence_bytes = confidence_png.tobytes()
+                else:
+                    self.logger.warning("Failed to encode confidence data as PNG")
+            
+            # Pack everything: metadata_length (4 bytes) + metadata + depth_png_size (4 bytes) + depth_png + confidence_png
             packed_data = struct.pack('<I', metadata_length)  # Little-endian unsigned int
             packed_data += metadata_json
+            packed_data += struct.pack('<I', len(depth_bytes))  # Depth PNG size
             packed_data += depth_bytes
             packed_data += confidence_bytes
             

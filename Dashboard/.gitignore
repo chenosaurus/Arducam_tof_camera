@@ -1,20 +1,3 @@
-.vscode/
-.xmake/
-
-py_arducam/
-CMakeFiles/
-
-build/
-
-/ros2_publisher/install/
-/ros2_publisher/log/
-/ros2_publisher/*.json
-/example/python/*.json
-
-*.patch
-/*.json
-/cali.bin
-
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
