@@ -114,46 +114,69 @@ class DepthCameraDataStreamer:
             }
             self.logger.info(f"Camera info: {camera_info}")
             
+            frame_count = 0
             while self.is_streaming and self.room.connection_state == rtc.ConnectionState.CONN_CONNECTED:
                 start_time = asyncio.get_event_loop().time()
                 
-                # Capture frame from camera
-                frame = self.cam.requestFrame(2000)  # 2 second timeout
-                
-                if frame is not None and isinstance(frame, ac.DepthData):
-                    try:
-                        # Get depth and confidence data
-                        depth_buf = frame.depth_data
-                        confidence_buf = frame.confidence_data
-                        
-                        # Release frame immediately after copying data
-                        self.cam.releaseFrame(frame)
-                        
-                        # Serialize the data
-                        serialized_data = self.serialize_frame_data(depth_buf, confidence_buf, camera_info)
-                        
-                        if serialized_data:
-                            # log data size in bytes
-                            self.logger.info(f"Data size: {len(serialized_data)} bytes")
+                try:
+                    # Capture frame from camera
+                    self.logger.debug(f"Requesting frame {frame_count}")
+                    frame = self.cam.requestFrame(2000)  # 2 second timeout
+                    
+                    if frame is not None and isinstance(frame, ac.DepthData):
+                        try:
+                            # Get depth and confidence data
+                            depth_buf = frame.depth_data
+                            confidence_buf = frame.confidence_data
                             
-                            # Publish data to room
-                            await self.room.local_participant.publish_data(
-                                serialized_data,
-                                reliable=True,
-                            )
+                            # Release frame immediately after copying data
+                            self.cam.releaseFrame(frame)
                             
-                            self.logger.debug(f"Published frame data: {len(serialized_data)} bytes")
+                            # Serialize the data
+                            self.logger.debug(f"Serializing frame {frame_count}")
+                            serialized_data = self.serialize_frame_data(depth_buf, confidence_buf, camera_info)
                             
-                    except Exception as e:
-                        self.logger.error(f"Error processing frame: {e}")
-                else:
-                    self.logger.warning("Failed to capture frame from camera")
+                            if serialized_data:
+                                # log data size in bytes
+                                self.logger.info(f"Data size: {len(serialized_data)} bytes")
+                                
+                                # Publish data to room with timeout
+                                self.logger.debug(f"Publishing frame {frame_count}")
+                                try:
+                                    await asyncio.wait_for(
+                                        self.room.local_participant.publish_data(
+                                            serialized_data,
+                                            reliable=True,
+                                        ),
+                                        timeout=5.0  # 5 second timeout
+                                    )
+                                    self.logger.debug(f"Successfully published frame {frame_count}")
+                                except asyncio.TimeoutError:
+                                    self.logger.error(f"Timeout publishing frame {frame_count}")
+                                except Exception as e:
+                                    self.logger.error(f"Error publishing frame {frame_count}: {e}")
+                                
+                        except Exception as e:
+                            self.logger.error(f"Error processing frame {frame_count}: {e}")
+                            # Make sure to release frame even on error
+                            try:
+                                self.cam.releaseFrame(frame)
+                            except:
+                                pass
+                    else:
+                        self.logger.warning(f"Failed to capture frame {frame_count} from camera")
+                    
+                    frame_count += 1
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in frame capture {frame_count}: {e}")
                 
                 # Calculate sleep time to maintain target FPS
                 elapsed_time = asyncio.get_event_loop().time() - start_time
                 sleep_time = max(0, frame_interval - elapsed_time)
                 
                 if sleep_time > 0:
+                    self.logger.debug(f"Sleeping for {sleep_time:.3f}s")
                     await asyncio.sleep(sleep_time)
                     
         except Exception as e:
