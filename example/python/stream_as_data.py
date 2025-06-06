@@ -144,6 +144,7 @@ class DepthCameraDataStreamer:
                 "height": info.height,
                 "max_distance": MAX_DISTANCE
             }
+            self.logger.info(f"Camera info: {camera_info}")
             
             while self.is_streaming and self.room.connection_state == rtc.ConnectionState.CONN_CONNECTED:
                 start_time = asyncio.get_event_loop().time()
